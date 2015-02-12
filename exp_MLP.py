@@ -21,7 +21,9 @@ iperm = np.arange(Xmnist.shape[0])
 np.random.shuffle(iperm)
 X = Xmnist[iperm]
 Y = Y[iperm]
-Xtrain = X[0:100]
-Ytrain = Y[0:100]
-mlp = mlp_instance.MLP([784,500,10], learning_rate=0.1, n_iter=100)
+ending_index = 2000
+Xtrain = X[0:ending_index]
+Ytrain = Y[0:ending_index]
+mlp = mlp_instance.MLP([784,100,10], learning_rate=0.35, n_iter=10, auto_update_lr=True)
 mlp.fit(Xtrain, Ytrain)
+print "Score apprentissage : ",mlp.score(X[ending_index:],Y[ending_index:])

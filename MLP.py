@@ -8,31 +8,30 @@ import copy as cp
 
 from sklearn.base import BaseEstimator
 from sklearn.base import TransformerMixin
-#from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score
 
+
+def sigmo(x):
+    return 1.0/ (1+np.exp(- x))
 
 def sigmoid(x):
-    return (1.5 / (1 + np.exp(-1.5 * x))) - 0.25
-
+    return 1.5* sigmo(x) -0.25
 
 def dsigmoid(x):
-    return sigmoid(x) * (1 - sigmoid(x))
-
+    ''' Derivative of sigmoid above '''
+    return 1.5 * sigmo(x) * (1-sigmo(x))
 
 def tanh(x):
     return np.tanh(x)
 
-
 def dtanh(x):
     return 1.0 - np.tanh(x) ** 2
-
 
 def relu(x):
     #rectified linear unit = detecteur de pattern = nul en dessous d'un seuil
     y = x
     y[x < 0] = 0  # annule les valeurs de x negatives
     return y
-
 
 def drelu(x):
     y = x
@@ -59,18 +58,20 @@ class Layer:
         self.dfa = dsigmoid
         self.statesIn = np.zeros(self.ninputs)
         self.statesOut = np.zeros(self.noutputs)
+        self.activOut = np.zeros((self.noutputs,1))
         self.deltas = np.zeros(self.noutputs)
 
     def forward(self, inputs):
         self.statesIn = inputs  #on conserve l'etat d'entree pour la retropropagation
-        self.statesOut = np.dot(self.W, inputs) + self.Wbias
-        self.statesOut = self.fa(self.statesOut)
+        self.activOut = np.dot(self.W, inputs) + self.Wbias
+        self.statesOut = self.fa(self.activOut)
         return self.statesOut
 
     def backward(self, err):
-        self.delta = err * self.dfa(self.statesOut)
+        self.delta = err * self.dfa(self.activOut)
         err = np.dot(self.W.T, self.delta)
         return err
+
 
     def compute_gradient_step(self):
         self.dW = self.learning_rate * np.dot(self.delta.reshape(self.delta.shape[0], 1), self.statesIn.reshape(1, self.statesIn.shape[0])) + 2 * self.wdecay * self.W
@@ -93,7 +94,7 @@ class Layer:
 
 
 class MLP:
-    def __init__(self, SpecLayers, learning_rate=0.01, wdecay=0.0, momentum=0.0, n_iter=10):
+    def __init__(self, SpecLayers, learning_rate=0.01, wdecay=0.0, momentum=0.0, n_iter=10, auto_update_lr=True):
         self.SpecLayers = SpecLayers
         self.learning_rate = learning_rate
         self.learning_rate_init = learning_rate
@@ -101,6 +102,7 @@ class MLP:
         self.momentum = momentum
         self.n_iter = n_iter
         self.layers = []
+        self.auto_update_lr = auto_update_lr
         for i in range(1, len(self.SpecLayers)):
             self.layers.append(
                 Layer(self.SpecLayers[i - 1], self.SpecLayers[i], self.learning_rate, self.wdecay, self.momentum))
@@ -140,8 +142,11 @@ class MLP:
         # Y est de dimension particuliere: plutôt qu'une seule colonne où la valeur correspond à la classe, il y a autant de colonnes que de classes possibles. Pour savoir à quelle ligne appartient un exemple (une ligne), on regarde la colonne où il y a un 1 (ex: col 5 <=> classe 5)
         # Pour les tests, on regarde la colonne où la valeur est max
         n_examples = X.shape[0]
-        learning_rates = [0.0001, 0.001, 0.01, 0.1, 0.5, 0.9, 0.95, 1.05, 1.5, 2, 10]
+        learning_rates = [0.0001, 0.001, 0.01, 0.1, 0.2, 0.3, 0.5, 0.9, 0.95, 1.05, 1.5, 2, 10]
+        #learning_rates = [0.35]
         errold = 1000000.0
+        freq = 1
+        freq_ref = 3
         for iteration in range(self.n_iter):
             err = 0.0
             for i in range(n_examples):
@@ -149,28 +154,34 @@ class MLP:
                 #print "\n err : ", err /n_examples
             err /= n_examples
             print "\n erreur quadratique: ", err
-            #"Regle de readaptaion du pas - on diminue le pas de gradient..."
-            #self.learning_rate = self.learning_rate*0.1
-            #self.learning_rate = self.learning_rate/(1 + self.learning_rate_init*iteration)
-
-            #on met à jour le learning_rate suivant les cas:
-            temp_mlp = cp.copy(self)
-            best_lr = self.learning_rate
-            best_err = 1000000
-            for lr in learning_rates:
-                Xtemp = X[0:0.1 * X.shape[0], :]
-                Ytemp = Y[0:0.1 * Y.shape[0], :]
-                temp_err = temp_mlp.fit_partial(Xtemp, Ytemp, lr)
-                if(temp_err < best_err):
-                    best_err = temp_err
-                    best_lr = lr
-            print "\n Best learning rate : {} for iteration {}".format(best_lr, iteration)
-            self.learning_rate = best_lr
+            if self.auto_update_lr == False:
+                #Regle de readaptaion du pas - on diminue le pas de gradient...
+                self.learning_rate = self.learning_rate*0.1
+                #self.learning_rate = self.learning_rate/(1 + self.learning_rate_init*iteration)
+            else:
+                if freq == freq_ref:
+                    freq = 1
+                    #on met à jour le learning_rate suivant les cas:
+                    best_lr = self.learning_rate
+                    best_err = err #initialise a err car si on ne peut pas mieux faire il ne sert a rien de changer le pas de gradient
+                    for lr in learning_rates:
+                        temp_mlp = cp.deepcopy(self)
+                        Xtemp = X[0:0.1 * X.shape[0], :]
+                        Ytemp = Y[0:0.1 * Y.shape[0], :]
+                        temp_err = temp_mlp.fit_partial(Xtemp, Ytemp, lr)
+                        print "temp_err: {}, learning rate: {}".format(temp_err, lr)
+                        if(temp_err < best_err):
+                            best_err = temp_err
+                            best_lr = lr
+                    print "\n Best learning rate : {} for iteration {}".format(best_lr, iteration+1)
+                    self.learning_rate = best_lr
+                else:
+                    freq += 1
 
             #on met à jour sur les couches
             self.set_learning_rate(self.learning_rate)
-            #if(np.abs(err - errold)/errold < 0.0001): #on arrete d'iterer si on est suffisamment proche du minimum
-            #	break
+            if(np.abs(err - errold)/errold < 0.0001): #on arrete d'iterer si on est suffisamment proche du minimum
+            	break
             errold = err
         print "\n Erreur quadratique finale: ", err
         return self
@@ -178,7 +189,6 @@ class MLP:
     def fit_partial(self, X, Y, lr):
         self.set_learning_rate(lr)
         n_examples = X.shape[0]
-        errold = 1000000.0
         err = 0.0
         for i in range(n_examples):
             err += self.gradient_step(X[i], Y[i])
@@ -190,7 +200,7 @@ class MLP:
 
     def predict_TS(self, X):
         n_examples = X.shape[0]
-        ypredit = np.zeros(n_examples, 1)
+        ypredit = np.zeros((n_examples, 1))
         for i in range(n_examples):
             ypredit[i] = self.predict_classe(X[i])
         return ypredit
