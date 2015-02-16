@@ -94,7 +94,7 @@ class Layer:
 
 
 class MLP:
-    def __init__(self, SpecLayers, learning_rate=0.01, wdecay=0.0, momentum=0.0, n_iter=10, auto_update_lr=True):
+    def __init__(self, SpecLayers=[784, 100, 10], learning_rate=0.01, wdecay=0.0, momentum=0.0, n_iter=10, auto_update_lr=True):
         self.SpecLayers = SpecLayers
         self.learning_rate = learning_rate
         self.learning_rate_init = learning_rate
@@ -169,7 +169,7 @@ class MLP:
                         Xtemp = X[0:0.1 * X.shape[0], :]
                         Ytemp = Y[0:0.1 * Y.shape[0], :]
                         temp_err = temp_mlp.fit_partial(Xtemp, Ytemp, lr)
-                        print "temp_err: {}, learning rate: {}".format(temp_err, lr)
+                        #print "temp_err: {}, learning rate: {}".format(temp_err, lr)
                         if(temp_err < best_err):
                             best_err = temp_err
                             best_lr = lr
@@ -239,7 +239,10 @@ class MLP:
         for l in self.layers:
             l.reset()
 
-    def get_params(self):
-        return {"SpecLayers": self.SpecLayers, "learning_rate": self.learning_rate, "wdecay": self.wdecay,
-                "n_iter": self.n_iter}
+    def get_params(self,deep=True):
+        return {'SpecLayers': self.SpecLayers,
+                'learning_rate': self.learning_rate,
+                'wdecay': self.wdecay,
+                'momentum': self.momentum,
+                'n_iter': self.n_iter}
 
